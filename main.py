@@ -4,6 +4,20 @@ import pygame
 # Initialize Pygame
 pygame.init()
 
+# Initialize Pygame Mixer
+pygame.mixer.init()
+# Load Sound Effects
+punch_sound = pygame.mixer.Sound("Sounds/punch.ogg")
+fireball_sound = pygame.mixer.Sound("Sounds/fireball.wav")
+hit_sound = pygame.mixer.Sound("Sounds/hit.wav")
+block_sound = pygame.mixer.Sound("Sounds/block.wav")
+
+# Set Volume Levels (0.0 to 1.0)
+punch_sound.set_volume(0.5)
+fireball_sound.set_volume(0.5)
+hit_sound.set_volume(0.6)
+block_sound.set_volume(0.6)
+
 # Screen dimensions
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 600
@@ -16,11 +30,21 @@ pygame.display.set_caption("2D Fighting Game")
 clock = pygame.time.Clock()
 FPS = 60
 
+round_time = 60                       # 60 seconds
+TIMER_EVENT = pygame.USEREVENT + 1
+pygame.time.set_timer(TIMER_EVENT, 1000)   # Fires every 1000ms (1 sec)
 player_x = 200
 player_y = 400
 player_width = 50
 player_height = 100
 player_rect = pygame.Rect(player_x,player_y,player_width,player_height)
+p1_fireball = None       # Stores the Rect for P1's fireball
+p1_fireball_speed = 10   # Moves right (+x)
+p1_fireball_cd = 0       # Fireball cooldown timer
+
+p2_fireball = None       # Stores the Rect for P2's fireball
+p2_fireball_speed = -10  # Moves left (-x)
+p2_fireball_cd = 0       # Fireball cooldown timer
 
 
 player_speed = 5
@@ -63,6 +87,8 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        if event.type == TIMER_EVENT and not game_over:
+            round_time -= 1
 
     p1_eye_rect = pygame.Rect(player_rect.right - 12, player_rect.y + 15, 8,  8)
     p2_eye_rect = pygame.Rect(p2_rect.left  + 4, p2_rect.y + 15, 8,8)
@@ -87,13 +113,29 @@ while running:
     target_region = (0,0,1000,500)
     screen.fill((20,24,40),rect = target_region)
 
-    
     # Wrap all movement, jumping, physics, and attack checks inside an IF NOT game_over: condition so player inputs are ignored when the fight is finished.
     if not game_over:
-        if keys[pygame.K_a] == True:
-            player_rect.x -= player_speed
-        if keys[pygame.K_d] == True:
-            player_rect.x += player_speed
+        # --- Player 1 Shield Check (S key) ---
+        p1_is_blocking = False
+        if keys[pygame.K_s] and not is_jumping:
+            p1_is_blocking = True
+
+        # --- Player 2 Shield Check (DOWN ARROW) ---
+        p2_is_blocking = False
+        if keys[pygame.K_DOWN]  and not p2_is_jumping:
+            p2_is_blocking = True
+
+        if keys[pygame.K_s] and keys[pygame.K_a]:
+            p1_is_blocking = True
+        if keys[pygame.K_s] and keys[pygame.K_d]:
+            p1_is_blocking = True
+
+        
+        if keys[pygame.K_DOWN]  and keys[pygame.K_LEFT]:
+            p2_is_blocking = True
+        if keys[pygame.K_DOWN]  and keys[pygame.K_RIGHT]:
+            p2_is_blocking = True
+
         if player_rect.left < 0:
             player_rect.left = 0
         if player_rect.right > SCREEN_WIDTH:
@@ -108,10 +150,6 @@ while running:
             vel_y = 0
             is_jumping = False
 
-        if keys[pygame.K_LEFT] == True:
-            p2_rect.x -= p2_speed
-        if keys[pygame.K_RIGHT] == True:
-            p2_rect.x += p2_speed
         if p2_rect.left < 0:
             p2_rect.left = 0
         if p2_rect.right > SCREEN_WIDTH:
@@ -129,32 +167,131 @@ while running:
         
         
         # Player 1 Attack (F key)
-        if keys[pygame.K_f] and p1_attack_cooldown == 0:
+        if keys[pygame.K_f] and p1_attack_cooldown == 0 and not p1_is_blocking:
+            punch_sound.play() # Play swing sound
             # Attack box extends 40px out from player_rect
             p1_attack_rect = pygame.Rect(player_rect.right, player_rect.y + 20, 40, 20)
             pygame.draw.rect(screen, (255, 255, 0), p1_attack_rect)  # Visual punch indicator (Yellow)
+
     
             # Check if attack box hits Player 2
             if p1_attack_rect.colliderect(p2_rect):
-                p2_health -=  10
-                p1_attack_cooldown = 30
-                p2_rect.x += 20  # Knockback Player 2 to the right
+                if p2_is_blocking == True:
+                    p2_health -= 0
+                    block_sound.play() # Play block sound
+                else:
+                    hit_sound.play() # Play hit sound
+                    p2_health -=  10
+                    p1_attack_cooldown = 30
+                    p2_rect.x += 20  # Knockback Player 2 to the right
         # Player 2 Attack (L key)
-        if keys[pygame.K_l]and p2_attack_cooldown == 0:
+        if keys[pygame.K_l]and p2_attack_cooldown == 0 and not p2_is_blocking:
             # Attack box extends 40px out from player_rect
+            punch_sound.play() # Play swing sound
             p2_attack_rect = pygame.Rect(p2_rect.left - 40, p2_rect.y + 20, 40, 20)
             pygame.draw.rect(screen, (255, 255, 0), p2_attack_rect)  # Visual punch indicator (Yellow)
 
             # Check if attack box hits Player 1
             if p2_attack_rect.colliderect(player_rect):
-                p1_health -= 10
-                p2_attack_cooldown = 30
-                player_rect.x -= 20  # Knockback Player 1 to the left
+                if p1_is_blocking == True:
+                    block_sound.play() # Play block sound
+                    p1_health -= 0
+                else:
+                    hit_sound.play() # Play hit sound
+                    p1_health -= 10
+                    p2_attack_cooldown = 30
+                    player_rect.x -= 20  # Knockback Player 1 to the left
         if p1_attack_cooldown > 0:
             p1_attack_cooldown  -= 1
 
         if p2_attack_cooldown > 0:
             p2_attack_cooldown -= 1
+        if keys[pygame.K_g] and p1_fireball_cd == 0 and p1_fireball == None and  not p1_is_blocking:
+            p1_fireball = pygame.Rect(player_rect.right, player_rect.y + 30, 20, 20)
+            p1_fireball_cd = 120   # 2-second cooldown (120 frames at 60 FPS)
+            fireball_sound.play() # Play fireball sound
+        if keys[pygame.K_k] and p2_fireball_cd == 0 and p2_fireball == None and not p2_is_blocking:
+            p2_fireball = pygame.Rect(p2_rect.left - 20, p2_rect.y + 30, 20, 20)
+            p2_fireball_cd = 120   # 2-second cooldown (120 frames at 60 FPS)
+            fireball_sound.play() # Play fireball sound
+        # --- Player 1 Fireball Logic --- [G key]
+        if p1_fireball != None:
+            p1_fireball.x += p1_fireball_speed
+            # Check hit on Player 2
+            if p1_fireball.colliderect(p2_rect):
+                if p2_is_blocking:
+                    block_sound.play() # Play block sound
+                    p1_fireball = None
+                else:
+                    hit_sound.play() # Play hit sound
+                    p2_health -= 15            # Fireballs deal 15 damage!
+                    p2_rect.x += 30            # Extra knockback
+                    p1_fireball = None         # Destroy fireball on impact
+            # Remove if off-screen
+            else:
+                if p1_fireball.left > SCREEN_WIDTH:
+                    p1_fireball = None
+        # --- Player 2 Fireball Logic --- [K key]
+        if p2_fireball != None:
+            p2_fireball.x += p2_fireball_speed
+            # Check hit on Player 1
+            if p2_fireball.colliderect(player_rect):
+                if p1_is_blocking:
+                    p2_fireball = None
+                    block_sound.play() # Play block sound
+                else:
+                    p1_health -= 15            # Fireballs deal 15 damage!
+                    player_rect.x -= 30            # Extra knockback
+                    p2_fireball = None         # Destroy fireball on impact
+                    hit_sound.play() # Play hit sound
+            # Remove if off-screen
+            else:
+                if p2_fireball.right < 0:
+                    p2_fireball = None
+        # Player 1 Movement
+        if keys[pygame.K_a] and not p1_is_blocking:
+            player_rect.x -= player_speed
+
+        if keys[pygame.K_d] and not p1_is_blocking:
+            player_rect.x += player_speed
+        # Player 2  Movement
+        if keys[pygame.K_LEFT] and not p2_is_blocking:
+            p2_rect.x -= player_speed
+
+        if keys[pygame.K_RIGHT] and not p2_is_blocking:
+            p2_rect.x += player_speed
+        # Player 1 Jump
+        if keys[pygame.K_w] and not is_jumping and not p1_is_blocking:
+            vel_y = JUMP_STRENGTH
+            is_jumping = True
+
+        # Player 2 Jump
+        if keys[pygame.K_UP] and not p2_is_jumping and not p2_is_blocking:
+            p2_vel_y = JUMP_STRENGTH
+            p2_is_jumping = True
+        if round_time <= 0 and not game_over:
+            game_over = True
+            if p1_health > p2_health:
+                p1_score += 1
+                winner_text = "Time Over! Kashan Wins!"
+            elif p2_health > p1_health:
+                 p2_score += 1
+                 winner_text = "Time Over! Ali Wins!"
+            else:
+                winner_text = "Time Over! Draw!"
+
+    
+
+    # Reduce cooldown timer every frame
+    if p1_fireball_cd > 0:
+        p1_fireball_cd -= 1
+    if p2_fireball_cd > 0:
+        p2_fireball_cd -= 1
+    if p1_fireball != None:
+        pygame.draw.rect(screen, (255, 165, 0), p1_fireball)
+    if p2_fireball != None:
+        pygame.draw.rect(screen, (255, 165, 0), p2_fireball)
+    
 
     # Draw Rectangles
     pygame.draw.rect(screen, (255, 0, 0), player_rect)
@@ -169,12 +306,23 @@ while running:
     pygame.draw.rect(screen, (0,255,0), grass_rect)
     pygame.draw.rect(screen, (255, 255, 255), p1_hand_rect)
     pygame.draw.rect(screen, (255, 255, 255), p2_hand_rect)
+    # Draw Player 1 Shield
+    if p1_is_blocking == True:
+        # Slightly larger rectangle surrounding player_rect
+        p1_shield_rect = pygame.Rect(player_rect.x - 5, player_rect.y - 5, player_width + 10, player_height + 10)
+        pygame.draw.rect(screen, (255, 255, 255), p1_shield_rect,4)
+
+    if p2_is_blocking:
+        p2_shield_rect = pygame.Rect(p2_rect.x - 5, p2_rect.y - 5, p2_width + 10, p2_height + 10)
+        pygame.draw.rect(screen, (255, 255, 255), p2_shield_rect,4)
 
     # Draw text labels on top
     p1_text = font.render("Kashan Intekhab", True, (255, 255, 255))
     p2_text = font.render("Ali Hammad", True, (255, 255, 255))
     score_text = font.render(f"Kashan: {p1_score}  |  Ali: {p2_score}", True, (255, 255, 255))
     hp_tag = font.render("HP", True, (255, 255, 255))
+    timer_surface = large_font.render(str(round_time), True, (255, 255, 255))
+    screen.blit(timer_surface, (SCREEN_WIDTH // 2 - 20, 50))
 
     screen.blit(p1_text, (player_rect.x - 20, player_rect.y - 25))
     screen.blit(p2_text, (p2_rect.x - 10, p2_rect.y - 25))
@@ -215,8 +363,14 @@ while running:
         p1_attack_cooldown = 0
         p2_attack_cooldown = 0
         game_over = False
+        p1_fireball = None
+        p2_fireball = None
+        p1_fireball_cd = 0
+        p2_fireball_cd = 0
+        round_time = 60
 
     
+
 
     # 4. Refresh Screen
     pygame.display.flip()
