@@ -1,22 +1,38 @@
 import sys
 import pygame
 
-# Initialize Pygame
-pygame.init()
+# Initialize Pygame  
+pygame.init()  
+
 
 # Initialize Pygame Mixer
 pygame.mixer.init()
+# --- Background Music Setup ---
+pygame.mixer.music.load("Sounds/bg_music.mp3")
+pygame.mixer.music.set_volume(0.1)  # Keep volume moderate (0.0 to 1.0) so sound effects stay clear
+pygame.mixer.music.play(-1)          # '-1' means loop infinitely!
+
+
 # Load Sound Effects
 punch_sound = pygame.mixer.Sound("Sounds/punch.ogg")
 fireball_sound = pygame.mixer.Sound("Sounds/fireball.wav")
 hit_sound = pygame.mixer.Sound("Sounds/hit.wav")
 block_sound = pygame.mixer.Sound("Sounds/block.wav")
+bump_sound = pygame.mixer.Sound("Sounds/bump.aiff")
 
 # Set Volume Levels (0.0 to 1.0)
-punch_sound.set_volume(0.5)
-fireball_sound.set_volume(0.5)
-hit_sound.set_volume(0.6)
-block_sound.set_volume(0.6)
+punch_sound.set_volume(0.9)
+fireball_sound.set_volume(0.9)
+hit_sound.set_volume(1.0)
+block_sound.set_volume(1.0)
+bump_sound.set_volume(0.2)
+
+match_intro_timer = 120  # 2 seconds (at 60 FPS)
+round_number = 1
+# Shield duration limits (120 frames = 2 seconds max shield)
+MAX_SHIELD_TIME = 40
+p1_shield_timer = 0
+p2_shield_timer = 0
 
 # Screen dimensions
 SCREEN_WIDTH = 1000
@@ -64,6 +80,9 @@ font = pygame.font.SysFont(None, 24)
 large_font = pygame.font.SysFont(None, 60)
 small_font = pygame.font.SysFont(None, 30)
 
+
+
+
 # Player Health
 MAX_HEALTH = 100
 p1_health = MAX_HEALTH
@@ -79,6 +98,20 @@ game_over = False
 winner_text = ""
 p1_score = 0
 p2_score = 0
+
+# Global Particle List
+particles = []
+
+import random
+def spawn_particles(x,y,color, count = 12):
+    for i in range(0,count):
+        particle = {'x': x,'y': y,'vel_x': random.uniform(-5, 5),
+            'vel_y': random.uniform(-5, 5),   # Random vertical spread
+            'life': random.randint(10, 20),     # Exists for 10-20 frames
+            'color': color,
+            'size': random.randint(3, 6)}
+        particles.append(particle)
+    
 
 # Main Game Loop
 running = True
@@ -103,11 +136,15 @@ while running:
         p2_score += 1
         game_over = True
         winner_text = "Ali Hammad Wins!"
+        pygame.mixer.music.fadeout(1000)  # Smoothly fades music out over 1 second
+
 
     if p2_health <= 0 and not game_over:
         p1_score += 1
         game_over = True
         winner_text = "Kashan Intekhab Wins!"
+        pygame.mixer.music.fadeout(1000)  # Smoothly fades music out over 1 second
+
     # 2. Update Display
     screen.fill((30, 30, 30))  # Dark gray background
     target_region = (0,0,1000,500)
@@ -115,15 +152,18 @@ while running:
 
     # Wrap all movement, jumping, physics, and attack checks inside an IF NOT game_over: condition so player inputs are ignored when the fight is finished.
     if not game_over:
-        # --- Player 1 Shield Check (S key) ---
-        p1_is_blocking = False
-        if keys[pygame.K_s] and not is_jumping:
-            p1_is_blocking = True
+        # Match intro text
+        if match_intro_timer > 60:
+            round1_text = large_font.render(f"ROUND {round_number}", True, (255, 255, 255))
+            screen.blit(round1_text, (SCREEN_WIDTH // 2 -60, SCREEN_HEIGHT//2 - 50))
+        else:
+             if match_intro_timer > 0:
+                fight_text = large_font.render("FIGHT!", True, (255, 255, 255))
+                screen.blit(fight_text, (SCREEN_WIDTH // 2 - 60, SCREEN_HEIGHT//2 - 50))
+        if match_intro_timer > 0:
+           match_intro_timer -= 1
 
-        # --- Player 2 Shield Check (DOWN ARROW) ---
-        p2_is_blocking = False
-        if keys[pygame.K_DOWN]  and not p2_is_jumping:
-            p2_is_blocking = True
+
 
         if keys[pygame.K_s] and keys[pygame.K_a]:
             p1_is_blocking = True
@@ -135,6 +175,39 @@ while running:
             p2_is_blocking = True
         if keys[pygame.K_DOWN]  and keys[pygame.K_RIGHT]:
             p2_is_blocking = True
+        # --- Player 1 Shield Check (S key) ---
+        p1_is_blocking = False
+        if keys[pygame.K_s] and not is_jumping:
+            if p1_shield_timer < MAX_SHIELD_TIME:
+                p1_is_blocking = True
+                p1_shield_timer += 1  # Shield active, count up!
+            else:
+                p1_is_blocking = False  # Time expired! Shield auto-removed!
+        else:
+            # Recharge shield when key is released
+            if p1_shield_timer > 0:
+                p1_shield_timer -= 1
+
+        # --- Player 2 Shield Check (DOWN ARROW) ---
+        p2_is_blocking = False
+        if keys[pygame.K_DOWN] and not p2_is_jumping:
+            if p2_shield_timer < MAX_SHIELD_TIME:
+                p2_is_blocking = True
+                p2_shield_timer += 1  # Shield active, count up!
+            else:
+                p2_is_blocking = False  # Time expired! Shield auto-removed!
+        else:
+            # Recharge shield when key is released
+            if p2_shield_timer > 0:
+                p2_shield_timer -= 1
+        # Draw P1 Shield Duration Bar
+        if p1_is_blocking:
+            shield_pct = (MAX_SHIELD_TIME - p1_shield_timer)/MAX_SHIELD_TIME
+            pygame.draw.rect(screen,(0,200,255),(player_rect.x,player_rect.y - 10, int(player_width*shield_pct),5))
+        # Draw P2 Shield Duration Bar
+        if p2_is_blocking:
+            shield_pct = (MAX_SHIELD_TIME - p2_shield_timer)/MAX_SHIELD_TIME
+            pygame.draw.rect(screen,(0,200,255),(p2_rect.x,p2_rect.y - 10, int(p2_width*shield_pct),5))
 
         if player_rect.left < 0:
             player_rect.left = 0
@@ -179,11 +252,13 @@ while running:
                 if p2_is_blocking == True:
                     p2_health -= 0
                     block_sound.play() # Play block sound
+                    spawn_particles(p2_rect.left, p2_rect.y + 30, (0, 200, 255), count=8)
                 else:
                     hit_sound.play() # Play hit sound
                     p2_health -=  10
                     p1_attack_cooldown = 30
                     p2_rect.x += 20  # Knockback Player 2 to the right
+                    spawn_particles(p2_rect.left, p2_rect.y + 30, (255, 255, 0), count=12)
         # Player 2 Attack (L key)
         if keys[pygame.K_l]and p2_attack_cooldown == 0 and not p2_is_blocking:
             # Attack box extends 40px out from player_rect
@@ -196,11 +271,13 @@ while running:
                 if p1_is_blocking == True:
                     block_sound.play() # Play block sound
                     p1_health -= 0
+                    spawn_particles(player_rect.right, player_rect.y + 30, (0, 200, 255), count=8)
                 else:
                     hit_sound.play() # Play hit sound
                     p1_health -= 10
                     p2_attack_cooldown = 30
                     player_rect.x -= 20  # Knockback Player 1 to the left
+                    spawn_particles(player_rect.right, player_rect.y + 30, (255, 255, 0), count=12)
         if p1_attack_cooldown > 0:
             p1_attack_cooldown  -= 1
 
@@ -221,12 +298,16 @@ while running:
             if p1_fireball.colliderect(p2_rect):
                 if p2_is_blocking:
                     block_sound.play() # Play block sound
+                    spawn_particles(p1_fireball.x, p1_fireball.y, (50,255,50), count=8)
                     p1_fireball = None
+                    
                 else:
                     hit_sound.play() # Play hit sound
                     p2_health -= 15            # Fireballs deal 15 damage!
                     p2_rect.x += 30            # Extra knockback
+                    spawn_particles(p1_fireball.x, p1_fireball.y, (255, 100, 0), count=15)
                     p1_fireball = None         # Destroy fireball on impact
+                    
             # Remove if off-screen
             else:
                 if p1_fireball.left > SCREEN_WIDTH:
@@ -237,29 +318,50 @@ while running:
             # Check hit on Player 1
             if p2_fireball.colliderect(player_rect):
                 if p1_is_blocking:
+                    spawn_particles(p2_fireball.x, p2_fireball.y, (50,255,50), count=8)
                     p2_fireball = None
                     block_sound.play() # Play block sound
+                    
                 else:
                     p1_health -= 15            # Fireballs deal 15 damage!
                     player_rect.x -= 30            # Extra knockback
+                    spawn_particles(p2_fireball.x, p2_fireball.y, (255,100,0), count=15)
                     p2_fireball = None         # Destroy fireball on impact
                     hit_sound.play() # Play hit sound
+                    
             # Remove if off-screen
             else:
                 if p2_fireball.right < 0:
                     p2_fireball = None
+                
+        p1_old_x = player_rect.x
+        p2_old_x = p2_rect.x
         # Player 1 Movement
         if keys[pygame.K_a] and not p1_is_blocking:
             player_rect.x -= player_speed
 
+
         if keys[pygame.K_d] and not p1_is_blocking:
             player_rect.x += player_speed
+            
         # Player 2  Movement
         if keys[pygame.K_LEFT] and not p2_is_blocking:
             p2_rect.x -= player_speed
 
+        
+
         if keys[pygame.K_RIGHT] and not p2_is_blocking:
             p2_rect.x += player_speed
+
+        if player_rect.colliderect(p2_rect):
+            if p1_old_x < p2_old_x:
+                bump_sound.play() #play bump sound
+                player_rect.x = p1_old_x - 15
+                p2_rect.x = p2_old_x + 15
+            else:
+                bump_sound.play()   #play bump sound
+                player_rect.x = p1_old_x + 15
+                p2_rect.x = p2_old_x - 15
         # Player 1 Jump
         if keys[pygame.K_w] and not is_jumping and not p1_is_blocking:
             vel_y = JUMP_STRENGTH
@@ -271,6 +373,7 @@ while running:
             p2_is_jumping = True
         if round_time <= 0 and not game_over:
             game_over = True
+            pygame.mixer.music.fadeout(1000)  # Fade out music on Time Over
             if p1_health > p2_health:
                 p1_score += 1
                 winner_text = "Time Over! Kashan Wins!"
@@ -311,10 +414,12 @@ while running:
         # Slightly larger rectangle surrounding player_rect
         p1_shield_rect = pygame.Rect(player_rect.x - 5, player_rect.y - 5, player_width + 10, player_height + 10)
         pygame.draw.rect(screen, (255, 255, 255), p1_shield_rect,4)
+        
 
     if p2_is_blocking:
         p2_shield_rect = pygame.Rect(p2_rect.x - 5, p2_rect.y - 5, p2_width + 10, p2_height + 10)
         pygame.draw.rect(screen, (255, 255, 255), p2_shield_rect,4)
+        
 
     # Draw text labels on top
     p1_text = font.render("Kashan Intekhab", True, (255, 255, 255))
@@ -368,9 +473,19 @@ while running:
         p1_fireball_cd = 0
         p2_fireball_cd = 0
         round_time = 60
+        pygame.mixer.music.play(-1)  # Restart looping music for the new round
+        match_intro_timer = 120
+        round_number += 1
 
     
-
+    for j in particles.copy():
+        j["x"] += j["vel_x"]
+        j['y'] += j["vel_y"]
+        j['life'] -= 1 
+        spawn_rect = pygame.Rect(j["x"], j["y"], j["size"],j["size"])
+        pygame.draw.rect(screen, j["color"], spawn_rect)
+        if j["life"] <= 0:
+            particles.remove(j)
 
     # 4. Refresh Screen
     pygame.display.flip()
